@@ -5,57 +5,83 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Parser.java
+ * Purpose: Creates a java class based on a ".story" file.
+ * 
+ * @author Alexander Gregorio
+ */
 public class Parser {
 	private static final String[] TOKENS = {"Given ", "When ", "Then "};
+	private static final String REPETITION_TOKEN = "And ";
 	private static final String COMMENT_MARK = "#";
 	
-	private String storiesSource;
 	private Path storiesPath;
-	private String target;
 	private Path targetPath;
-	private Charset charset; 
+	private Charset charset;
 	
-	
+	/**
+	 * Creates parser with default configuration.
+	 * Default folder for ".story" files is "projectfolder\src\java\resources\exercises\".
+	 * Default charset for files is "UTF-8".
+	 */
 	public Parser() {
+		// System.getProperty("user.dir") -> Returns the absolute path to the project folder
 		this(System.getProperty("user.dir") + "\\src\\java\\resources\\exercises\\", "UTF-8");
 	}
 	
+	/**
+	 * @param storiesSourceURI Source path for ".story" files.
+	 * @param filesCharset Encoding used to read and write files.
+	 */
 	public Parser(String storiesSourceURI, String filesCharset) {
 		super();
-		this.storiesSource = storiesSourceURI;
 		this.storiesPath = Paths.get(storiesSourceURI);
 		
-//		String[] split = storiesSourceURI.split("\\");
-//		String s1 = split[split.length-1];
+		Path path = Paths.get(storiesSourceURI);
+		String directoryName = path.getFileName().toString();
 		
-		Path p = Paths.get(storiesSourceURI);
-		String s2 = p.getFileName().toString();
-		
-		this.target = storiesSourceURI + s2 + "-JAVA\\";
-		this.targetPath = Paths.get(storiesSourceURI + s2 + "-JAVA\\");
+		this.targetPath = path.resolve(directoryName + "-JAVA\\");
 		
 		this.charset = Charset.forName(filesCharset);
 		
-		createPath(storiesSource);
-		createPath(target);
+		createPath(storiesPath);
+		createPath(targetPath);
 	}
 	
-	private static void createPath(String URI) {
-		Path path = Paths.get(URI);
+	private static void createPath(Path path) {
 		if (!Files.exists(path)) {
-			new File(URI).mkdirs();
+			path.toFile().mkdirs();
 		}
 	}
 
+	private static void removeFile(Path filePath) {
+		if(Files.exists(filePath)){
+			try {
+				Files.delete(filePath);
+			} catch (IOException e) {
+				System.err.println(String.format("Unable to delete file %", filePath.getFileName().toString()));
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	/**
+	 * Creates a ".java" file for all ".story" files in the source path.
+	 * 
+	 * @throws StoryFileWrongFormatException
+	 */
 	public void parseAllFiles() throws StoryFileWrongFormatException {
-		File folder = new File(storiesSource);
+		File folder = storiesPath.toFile();
 		File[] allFilesInFolder = folder.listFiles();
 	
 		for(File file : allFilesInFolder) {
@@ -66,8 +92,14 @@ public class Parser {
 		}
 	}	
 	
+	/**
+	 * Creates a ".java" file for the ".story" file especified.
+	 * 
+	 * @param fileName Name of the file to be parsed.
+	 * @throws StoryFileWrongFormatException
+	 */
 	public void parseFile(String fileName) throws StoryFileWrongFormatException {
-		Path file = Paths.get((storiesSource + fileName));
+		Path file = storiesPath.resolve(fileName);
 		parseFile(file);
 	}
 	
@@ -77,6 +109,13 @@ public class Parser {
 		writeFile(tokenInformation, classAndMethodsNames);
 	}
 
+	/**
+	 * Read ".story" file and retrives relevant information.
+	 * 
+	 * @param file File that will be read
+	 * @return Map with the relevant information of the file. It uses the tokens as keys.
+	 * @throws StoryFileWrongFormatException
+	 */
 	private Map<String, String> retrieveTokenInformation(Path file) throws StoryFileWrongFormatException {
 		Map<String, String> tokenInformation = new HashMap<String, String>();
 		
@@ -123,14 +162,15 @@ public class Parser {
 	}
 	
 	private String processFileName(Path file){
-		String fileNameSeparator = "-";
 		String fileName = file.getFileName().toString();
 		
-		String[] split = fileName.split(fileNameSeparator);
-		int dotIndex = split[split.length-1].indexOf(".");
-		split[split.length-1] = split[split.length-1].substring(0, dotIndex);
+		// If the file name has any special character, break it to use camel case
+		String[] split = fileName.split("[^a-zA-z0-9]");
 		
-		return transformToCamelCase(split, true);
+		// The last index is the type of the file (story)	
+		String[] information = Arrays.copyOfRange(split, 0, split.length-1);
+				
+		return transformToCamelCase(information, true);
 	}
 	
 	private String transformToCamelCase(String[] strings, boolean startsWithCapitalLetter) {		
@@ -152,23 +192,24 @@ public class Parser {
 	}
 	
 	private void writeFile(Map<String, String> information, Map<String, String> classAndMethodsNames) {
-		Path file = Paths.get(target + classAndMethodsNames.get("Class") + ".java");
+		Path file = targetPath.resolve(classAndMethodsNames.get("Class") + ".java");
 		
+		// If the target file already exists, delete it before creating a new one
+		// WARNING: If parsing multiple files and multiple ".story" are mapped to the same ".java" file name
+		// only one ".java" file will be created
+		removeFile(file);
 		try(BufferedWriter writer = Files.newBufferedWriter(file, charset, StandardOpenOption.CREATE_NEW)){
-			String classDefinitionTemplate = "public class # {\n";
-			String classDefinition = classDefinitionTemplate.replace("#", classAndMethodsNames.get("Class"));
+			String classDefinitionTemplate = "public class %s {\n";
+			String classDefinition = String.format(classDefinitionTemplate, classAndMethodsNames.get("Class"));
 			writer.write(classDefinition);
 			
 			for(String token : TOKENS) {
-				String methodsTemplate = "    @#1(\"#2\")\n"
-									   + "    public void #3(){\n"
+				String methodsTemplate = "    @%s(\"%s\")\n"
+									   + "    public void %s(){\n"
 									   + "        //TODO\n"
 									   + "    }\n\n";
 				
-				String methodString = methodsTemplate
-											.replace("#1", token)
-											.replace("#2", information.get(token))
-											.replace("#3", classAndMethodsNames.get(token));
+				String methodString = String.format(methodsTemplate, token, information.get(token), classAndMethodsNames.get(token));
 				
 				writer.write(methodString);
 			}
@@ -176,8 +217,7 @@ public class Parser {
 			writer.write("}");		
 			
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
-		}
+		} 
 	}
 }
