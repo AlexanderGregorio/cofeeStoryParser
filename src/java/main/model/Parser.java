@@ -5,7 +5,6 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -58,6 +57,7 @@ public class Parser {
 		createPath(targetPath);
 	}
 	
+	// BEGIN - HELPERS
 	private static void createPath(Path path) {
 		if (!Files.exists(path)) {
 			path.toFile().mkdirs();
@@ -74,6 +74,15 @@ public class Parser {
 			}
 		}
 	}
+	
+	/**
+	 * Removes repeated white spaces and spaces in the beginning and ending
+	 * @param string
+	 */
+	public static String formatInformation(String string) {
+		return string.trim().replaceAll("\\s+", " ");
+	}
+	// END - HELPERS
 	
 	/**
 	 * Creates a ".java" file for all ".story" files in the source path.
@@ -93,7 +102,7 @@ public class Parser {
 	}	
 	
 	/**
-	 * Creates a ".java" file for the ".story" file especified.
+	 * Creates a ".java" file for the ".story" file specified.
 	 * 
 	 * @param fileName Name of the file to be parsed.
 	 * @throws StoryFileWrongFormatException
@@ -103,14 +112,15 @@ public class Parser {
 		parseFile(file);
 	}
 	
+	
 	private void parseFile(Path file) throws StoryFileWrongFormatException{
 		Map<String, String> tokenInformation = retrieveTokenInformation(file);
 		Map<String, String> classAndMethodsNames = generateClassAndMethodsNames(file, tokenInformation);
 		writeFile(tokenInformation, classAndMethodsNames);
 	}
-
+	
 	/**
-	 * Read ".story" file and retrives relevant information.
+	 * Read ".story" file and retrieves relevant information.
 	 * 
 	 * @param file File that will be read
 	 * @return Map with the relevant information of the file. It uses the tokens as keys.
@@ -131,9 +141,16 @@ public class Parser {
 		    			endOfInformation = line.length();
 		    		
 		    		String information = line.substring(TOKENS[i].length(), endOfInformation);
-		    		tokenInformation.put(TOKENS[i], information);
-		    		
+		    		tokenInformation.put(TOKENS[i], formatInformation(information));
+		    				    		
 		    		i++;
+		    	} else if(line.startsWith(REPETITION_TOKEN)) {
+		    		// There is an "And" token before any other token
+		    		if(i == 0) {
+		    			throw new StoryFileWrongFormatException();
+		    		} else {
+		    			
+		    		}
 		    	}
 		    }
 		    
@@ -146,6 +163,7 @@ public class Parser {
 		
 		return tokenInformation;
 	}
+	
 	
 	private Map<String, String> generateClassAndMethodsNames(Path file, Map<String, String> tokenInformation){
 		Map<String, String> classAndMethodsNames = new HashMap<String, String>();
@@ -161,6 +179,7 @@ public class Parser {
 		return classAndMethodsNames;
 	}
 	
+	
 	private String processFileName(Path file){
 		String fileName = file.getFileName().toString();
 		
@@ -172,6 +191,7 @@ public class Parser {
 				
 		return transformToCamelCase(information, true);
 	}
+	
 	
 	private String transformToCamelCase(String[] strings, boolean startsWithCapitalLetter) {		
 		StringBuilder camelCase = new StringBuilder();
@@ -190,6 +210,7 @@ public class Parser {
 		
 		return camelCase.toString();
 	}
+	
 	
 	private void writeFile(Map<String, String> information, Map<String, String> classAndMethodsNames) {
 		Path file = targetPath.resolve(classAndMethodsNames.get("Class") + ".java");
