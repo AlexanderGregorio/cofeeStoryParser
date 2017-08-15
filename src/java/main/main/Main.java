@@ -5,7 +5,7 @@ import model.StoryFileWrongFormatException;
 
 public class Main {
 
-	public static void main(String[] args) {		
+	public static void main(String[] args) {
 		Parser p = new Parser();
 		try {
 //			p.parseFile("Story-File.story");
@@ -13,8 +13,6 @@ public class Main {
 		} catch (StoryFileWrongFormatException e) {
 			e.printStackTrace();
 		}
-		
-//		System.out.println("  asldk asdl   asd apsod   ".trim().replaceAll("\\s+", " "));
 	}
 
 }

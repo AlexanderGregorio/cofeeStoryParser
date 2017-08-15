@@ -9,8 +9,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -79,8 +82,19 @@ public class Parser {
 	 * Removes repeated white spaces and spaces in the beginning and ending
 	 * @param string
 	 */
-	public static String formatInformation(String string) {
+	private static String formatInformation(String string) {
 		return string.trim().replaceAll("\\s+", " ");
+	}
+	
+	private static String removeComment(String string, int beginIndex) {
+		// If there is a comment in the same line of the information,
+		// Retrieve index of the start of the comment
+		int endOfInformation = string.indexOf(COMMENT_MARK);
+		
+		if(endOfInformation == -1)
+			endOfInformation = string.length();
+		
+		return string.substring(beginIndex, endOfInformation);
 	}
 	// END - HELPERS
 	
@@ -112,10 +126,9 @@ public class Parser {
 		parseFile(file);
 	}
 	
-	
 	private void parseFile(Path file) throws StoryFileWrongFormatException{
-		Map<String, String> tokenInformation = retrieveTokenInformation(file);
-		Map<String, String> classAndMethodsNames = generateClassAndMethodsNames(file, tokenInformation);
+		Map<String, List<String>> tokenInformation = retrieveTokenInformation(file);
+		Map<String, List<String>> classAndMethodsNames = generateClassAndMethodsNames(file, tokenInformation);
 		writeFile(tokenInformation, classAndMethodsNames);
 	}
 	
@@ -126,31 +139,31 @@ public class Parser {
 	 * @return Map with the relevant information of the file. It uses the tokens as keys.
 	 * @throws StoryFileWrongFormatException
 	 */
-	private Map<String, String> retrieveTokenInformation(Path file) throws StoryFileWrongFormatException {
-		Map<String, String> tokenInformation = new HashMap<String, String>();
+	private Map<String, List<String>> retrieveTokenInformation(Path file) throws StoryFileWrongFormatException {
+		Map<String, List<String>> tokenInformation = new HashMap<String, List<String>>();
 		
 		try(BufferedReader reader = Files.newBufferedReader(file, charset)){
 			String line = null;
 			int i = 0;
 			
 		    while ((line = reader.readLine()) != null) {
-		    	if(line.startsWith(TOKENS[i])) {
-		    		int endOfInformation = line.indexOf(COMMENT_MARK);
-		    		
-		    		if(endOfInformation == -1)
-		    			endOfInformation = line.length();
-		    		
-		    		String information = line.substring(TOKENS[i].length(), endOfInformation);
-		    		tokenInformation.put(TOKENS[i], formatInformation(information));
-		    				    		
-		    		i++;
-		    	} else if(line.startsWith(REPETITION_TOKEN)) {
+		    	if(line.startsWith(REPETITION_TOKEN)) {
 		    		// There is an "And" token before any other token
 		    		if(i == 0) {
 		    			throw new StoryFileWrongFormatException();
 		    		} else {
-		    			
+		    			String information = removeComment(line, REPETITION_TOKEN.length());
+		    			tokenInformation.get(TOKENS[i-1]).add(formatInformation(information));
 		    		}
+		    	} else if(i < TOKENS.length) {
+		    		if(line.startsWith(TOKENS[i])) {
+			    		String information = removeComment(line, TOKENS[i].length());
+			    		tokenInformation.put(TOKENS[i], new ArrayList<String>());
+			    		tokenInformation.get(TOKENS[i]).add(formatInformation(information));
+			    				    		
+			    		i++;
+			    		
+			    	}
 		    	}
 		    }
 		    
@@ -164,21 +177,24 @@ public class Parser {
 		return tokenInformation;
 	}
 	
-	
-	private Map<String, String> generateClassAndMethodsNames(Path file, Map<String, String> tokenInformation){
-		Map<String, String> classAndMethodsNames = new HashMap<String, String>();
+	private Map<String, List<String>> generateClassAndMethodsNames(Path file, Map<String, List<String>> tokenInformation){
+		Map<String, List<String>> classAndMethodsNames = new HashMap<String, List<String>>();
 		
-		classAndMethodsNames.put("Class", processFileName(file));
+		classAndMethodsNames.put("Class", new ArrayList<String>());
+		classAndMethodsNames.get("Class").add(processFileName(file));
 		
 		for(String token : TOKENS) {
-			String[] split = tokenInformation.get(token).split(" ");
-			String camelCaseName = transformToCamelCase(split, false);
-			classAndMethodsNames.put(token, camelCaseName);
+			classAndMethodsNames.put(token, new ArrayList<String>());
+			
+			for(String information : tokenInformation.get(token)) {
+				String[] split = information.split(" ");
+				String camelCaseName = transformToCamelCase(split, false);
+				classAndMethodsNames.get(token).add(camelCaseName);
+			}
 		}
 		
 		return classAndMethodsNames;
-	}
-	
+	}	
 	
 	private String processFileName(Path file){
 		String fileName = file.getFileName().toString();
@@ -192,7 +208,6 @@ public class Parser {
 		return transformToCamelCase(information, true);
 	}
 	
-	
 	private String transformToCamelCase(String[] strings, boolean startsWithCapitalLetter) {		
 		StringBuilder camelCase = new StringBuilder();
 		
@@ -201,19 +216,21 @@ public class Parser {
 		} else {
 			camelCase.append(strings[0].substring(0, 1).toLowerCase());
 		}
+		
 		camelCase.append(strings[0].substring(1, strings[0].length()).toLowerCase());
 
 		for(int i = 1; i < strings.length; i++) {
-			camelCase.append(strings[i].substring(0, 1).toUpperCase());
-			camelCase.append(strings[i].substring(1, strings[i].length()));
+			if(strings[i].length() > 0) {
+				camelCase.append(strings[i].substring(0, 1).toUpperCase());
+				camelCase.append(strings[i].substring(1, strings[i].length()));
+			}
 		}
 		
 		return camelCase.toString();
 	}
 	
-	
-	private void writeFile(Map<String, String> information, Map<String, String> classAndMethodsNames) {
-		Path file = targetPath.resolve(classAndMethodsNames.get("Class") + ".java");
+	private void writeFile(Map<String, List<String>> informations, Map<String, List<String>> classAndMethodsNames) {
+		Path file = targetPath.resolve(classAndMethodsNames.get("Class").get(0) + ".java");
 		
 		// If the target file already exists, delete it before creating a new one
 		// WARNING: If parsing multiple files and multiple ".story" are mapped to the same ".java" file name
@@ -221,18 +238,26 @@ public class Parser {
 		removeFile(file);
 		try(BufferedWriter writer = Files.newBufferedWriter(file, charset, StandardOpenOption.CREATE_NEW)){
 			String classDefinitionTemplate = "public class %s {\n";
-			String classDefinition = String.format(classDefinitionTemplate, classAndMethodsNames.get("Class"));
+			String classDefinition = String.format(classDefinitionTemplate, classAndMethodsNames.get("Class").get(0));
 			writer.write(classDefinition);
 			
+			String methodsTemplate = "    @%s(\"%s\")\n"
+								   + "    public void %s(){\n"
+								   + "        //TODO\n"
+								   + "    }\n\n";
+			
 			for(String token : TOKENS) {
-				String methodsTemplate = "    @%s(\"%s\")\n"
-									   + "    public void %s(){\n"
-									   + "        //TODO\n"
-									   + "    }\n\n";
+				Iterator<String> itInformations = informations.get(token).iterator();
+				Iterator<String> itClassAndMethods = classAndMethodsNames.get(token).iterator();
 				
-				String methodString = String.format(methodsTemplate, token, information.get(token), classAndMethodsNames.get(token));
-				
-				writer.write(methodString);
+				while(itInformations.hasNext() && itClassAndMethods.hasNext()) {
+					String information = itInformations.next();
+					String methodName = itClassAndMethods.next();
+					
+					String methodString = String.format(methodsTemplate, token.trim(), information, methodName);
+					
+					writer.write(methodString);				
+				}
 			}
 			
 			writer.write("}");		
